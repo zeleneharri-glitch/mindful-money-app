@@ -86,20 +86,28 @@ async function listAllRecords(token) {
 
 function fromFeishuRecord(record) {
   const fields = record.fields || {};
+  const rawDate = fields[fieldNames.date];
+  const normalizedDate =
+    typeof rawDate === "number"
+      ? new Date(rawDate).toISOString().slice(0, 10)
+      : String(rawDate || "").slice(0, 10);
+
   return {
     id: Number(fields[fieldNames.localId]) || Date.now(),
     amount: Number(fields[fieldNames.amount]) || 0,
     category: String(fields[fieldNames.category] || "food"),
-    date: String(fields[fieldNames.date] || "").slice(0, 10),
+    date: normalizedDate,
     note: String(fields[fieldNames.note] || ""),
   };
 }
 
 function toFeishuFields(username, transaction) {
+  const dateValue = transaction.date ? new Date(`${transaction.date}T00:00:00+08:00`).getTime() : null;
+
   return {
     [fieldNames.username]: username,
     [fieldNames.localId]: String(transaction.id),
-    [fieldNames.date]: transaction.date,
+    [fieldNames.date]: dateValue,
     [fieldNames.amount]: Number(transaction.amount) || 0,
     [fieldNames.category]: transaction.category,
     [fieldNames.note]: transaction.note || "",
@@ -139,12 +147,14 @@ exports.handler = async (event) => {
     if (event.httpMethod === "GET") {
       const username = (event.queryStringParameters?.username || "").trim();
       if (!username) return json(400, { error: "缺少用户名" });
+
       const records = await listAllRecords(token);
       const transactions = records
         .filter((record) => record.fields?.[fieldNames.username] === username)
         .map(fromFeishuRecord)
         .filter((item) => item.date)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
       return json(200, { transactions });
     }
 
@@ -152,6 +162,7 @@ exports.handler = async (event) => {
       const payload = JSON.parse(event.body || "{}");
       const username = String(payload.username || "").trim();
       const transactions = Array.isArray(payload.transactions) ? payload.transactions : [];
+
       if (!username) return json(400, { error: "缺少用户名" });
       if (payload.action !== "replace") return json(400, { error: "不支持的同步动作" });
 
@@ -159,8 +170,10 @@ exports.handler = async (event) => {
       const userRecordIds = records
         .filter((record) => record.fields?.[fieldNames.username] === username)
         .map((record) => record.record_id);
+
       await deleteRecords(token, userRecordIds);
       await createRecords(token, username, transactions);
+
       return json(200, { ok: true, count: transactions.length });
     }
 
