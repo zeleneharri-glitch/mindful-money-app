@@ -46,7 +46,7 @@ async function feishuFetch(path, options = {}) {
 }
 
 async function getTenantToken() {
-  const data = await feishuFetch("/auth/v3/tenant_access_token/internal", {
+  const response = await fetch(`${FEISHU_BASE}/auth/v3/tenant_access_token/internal`, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     body: JSON.stringify({
@@ -54,6 +54,12 @@ async function getTenantToken() {
       app_secret: process.env.FEISHU_APP_SECRET,
     }),
   });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.code !== 0 || !data.tenant_access_token) {
+    throw new Error(data.msg || "获取飞书访问令牌失败");
+  }
+
   return data.tenant_access_token;
 }
 
